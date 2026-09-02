@@ -1,0 +1,20 @@
+local config = require("herdr-review.config")
+
+test("defaults are present", function()
+  config.setup()
+  eq(config.get().herdr_cmd, "herdr")
+  eq(config.get().base_branch, nil)
+end)
+
+test("setup deep-merges and keeps untouched keymaps", function()
+  config.setup({ base_branch = "develop", keymaps = { comment = "gc" } })
+  eq(config.get().base_branch, "develop")
+  eq(config.get().keymaps.comment, "gc")
+  eq(config.get().keymaps.close, "q")
+end)
+
+test("setup resets between calls", function()
+  config.setup({ base_branch = "develop" })
+  config.setup({})
+  eq(config.get().base_branch, nil)
+end)
