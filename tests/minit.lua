@@ -1,6 +1,10 @@
 -- Bare test runner: no plugin deps. `make test` or
 -- nvim --headless --clean -u tests/minit.lua
 vim.opt.runtimepath:append(vim.uv.cwd())
+-- Specs load real repo files as buffers; a stale or live swap file must not
+-- turn the suite into an interactive E325 prompt.
+vim.opt.swapfile = false
+vim.opt.shortmess:append("A")
 
 local pass, fail = 0, 0
 local failures = {}
