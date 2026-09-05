@@ -23,7 +23,15 @@ test("context is fenced as diff", function()
   truthy(s:find("```diff", 1, true), "missing diff fence, got:\n" .. s)
 end)
 
-test("render includes base branch when given", function()
-  local s = prompt.render({}, { base = "main" })
-  truthy(s:find("base `main`", 1, true), s)
+test("render adds no framing prose around the comments", function()
+  local s = prompt.render({
+    { path = "x.lua", side = "new", start_line = 1, end_line = 1, body = "only this" },
+  }, { base = "main" })
+  eq(s, prompt.render_comment({
+    path = "x.lua", side = "new", start_line = 1, end_line = 1, body = "only this",
+  }))
+end)
+
+test("render of an empty set is empty", function()
+  eq(prompt.render({}, nil), "")
 end)

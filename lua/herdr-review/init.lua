@@ -5,7 +5,17 @@ local M = {}
 
 ---@param opts HerdrReview.Config|nil
 function M.setup(opts)
-  config.setup(opts)
+  local o = config.setup(opts)
+  local lhs = o.keymaps.comment_global
+  if lhs and lhs ~= false then
+    -- Opt-in: commenting from any file buffer needs a global map, and the
+    -- review buffer's `c` would shadow `change` everywhere else.
+    vim.keymap.set({ "n", "x" }, lhs, ":HerdrReviewComment<CR>", {
+      silent = true,
+      desc = "Comment on selection (herdr-review)",
+    })
+  end
+  require("herdr-review.ui").ensure_repaint()
 end
 
 local function notify(msg, level)
@@ -24,7 +34,10 @@ function M.open()
   if not res then
     return notify(err or "could not compute diff", vim.log.levels.ERROR)
   end
+  M._meta = { base = res.base, sha = res.sha, root = res.root }
   ui.open(diff.parse(res.diff))
+  ui.ensure_repaint()
+  ui.mark_comments(require("herdr-review.store").ordered())
 end
 
 ---Re-run the diff, re-render, and reconcile stored comments.
@@ -38,6 +51,7 @@ function M.refresh()
   if not res then
     return notify(err or "could not compute diff", vim.log.levels.ERROR)
   end
+  M._meta = { base = res.base, sha = res.sha, root = res.root }
   local files = diff.parse(res.diff)
   local dropped = store.reconcile(files)
   ui.open(files)
@@ -48,29 +62,40 @@ function M.refresh()
 end
 
 ---Attach a comment to the current visual selection (or current line).
+---Works in the review buffer (anchored through the diff map) and in any
+---ordinary file buffer inside the repo (anchored directly to the new side).
 ---@param first integer|nil 1-indexed buffer line
 ---@param last integer|nil
 function M.comment(first, last)
   local store = require("herdr-review.store")
   local ui = require("herdr-review.ui")
 
-  local view = ui.current()
-  if not view then
-    return notify("no review buffer open", vim.log.levels.ERROR)
-  end
+  local buf = vim.api.nvim_get_current_buf()
   first = first or vim.api.nvim_win_get_cursor(0)[1]
   last = last or first
 
-  local anchor, err = ui.selection_to_anchor(view.buf, first, last)
+  local anchor, err
+  if ui.is_review_buf(buf) then
+    anchor, err = ui.selection_to_anchor(buf, first, last)
+  else
+    anchor, err = require("herdr-review.source").anchor_of_buf(buf, first, last)
+  end
   if not anchor then
     return notify(err or "selection covers no diff lines", vim.log.levels.ERROR)
   end
+
+  ui.ensure_repaint()
   ui.input_comment(function(body)
     if not body or body == "" then
       return
     end
     store.add(vim.tbl_extend("force", anchor, { body = body }))
-    ui.mark_comments(store.ordered())
+    if ui.is_review_buf(buf) then
+      ui.mark_comments(store.ordered())
+    else
+      ui.mark_file_buf(buf, store.get(anchor.path))
+    end
+    notify(("comment on %s:%d (%d total)"):format(anchor.path, anchor.start_line, store.count()))
   end)
 end
 
@@ -89,7 +114,7 @@ function M.submit(target)
     return notify("`" .. config.get().herdr_cmd .. "` not found on PATH", vim.log.levels.ERROR)
   end
 
-  local text = prompt.render(comments, nil)
+  local text = prompt.render(comments, M._meta)
   local function deliver(id)
     herdr.send(id, text, function(ok, err)
       if not ok then
@@ -124,13 +149,13 @@ end
 function M.preview()
   local store = require("herdr-review.store")
   local prompt = require("herdr-review.prompt")
-  local text = prompt.render(store.ordered(), nil)
+  local text = prompt.render(store.ordered(), M._meta)
   vim.api.nvim_echo({ { text } }, false, {})
 end
 
 function M.clear()
   require("herdr-review.store").clear()
-  require("herdr-review.ui").mark_comments({})
+  require("herdr-review.ui").clear_marks()
   notify("comments cleared")
 end
 
