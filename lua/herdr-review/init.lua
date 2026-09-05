@@ -110,8 +110,9 @@ function M.submit(target)
   if #comments == 0 then
     return notify("no comments to submit")
   end
-  if not herdr.available() then
-    return notify("`" .. config.get().herdr_cmd .. "` not found on PATH", vim.log.levels.ERROR)
+  local ok, why = herdr.available()
+  if not ok then
+    return notify(why or "herdr unavailable", vim.log.levels.ERROR)
   end
 
   local text = prompt.render(comments, M._meta)
@@ -122,6 +123,9 @@ function M.submit(target)
       end
       notify(("sent %d comment(s) to %s"):format(#comments, id))
       store.clear()
+      -- The comments left with the prompt, so the marks that advertise them as
+      -- pending have to go too -- in file buffers as well as the review buffer.
+      require("herdr-review.ui").clear_marks()
     end)
   end
 
